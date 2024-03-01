@@ -1,1 +1,160 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  AMIId:
+    Type: String
+    Description: Provide the application AMI Id for which you need to provide autoscaling group
 
+  InstanceId:
+    Type: String
+    Description: (Optional) Provide an EC2 instance ID to attach to the autoscaling group. Leave blank if creating a new instance.
+
+  Instancetype:
+    Type: String
+    Description: Choose an EC2 instance type for the launch template
+    AllowedValues:
+      - t2.nano
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
+      - t3.nano
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
+      - t3.xlarge
+      - t3.2xlarge
+
+  VPC:
+    Type: 'AWS::EC2::VPC::Id'
+    Description: A VPC that allows the load balancer access to the Internet
+
+  Subnets:
+    Type: 'List<AWS::EC2::Subnet::Id>'
+    Description: At least two public subnets in different Availability Zones in the selected VPC
+  
+  InstanceSecurityGroup:
+    Type: 'List<AWS::EC2::SecurityGroup::Id>'
+    Description: A security group in the selected VPC that allows HTTP access on the inbound port
+
+  ScalingPolicyType:
+    Type: String
+    Default: CPU
+    AllowedValues: 
+      - CPU
+      - ALB
+      - Both
+    Description: Specify the type of scaling policy. Choose 'CPU' for CPU utilization or 'ALB' for ALB request count
+
+  CPUPolicyTargetValue:
+    Type: String
+    Description: The target utilization for the CPU metric
+
+  ALBRequestCountTargetValue:
+    Type: String
+    Description: The optimal average request count per instance during any one-minute interval
+
+Resources:
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Subnets: !Ref Subnets
+
+  LoadBalancerListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: TargetGroup
+      Port: 80
+      Protocol: HTTP
+      VpcId: !Ref VPC
+
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Condition: CreateNewInstance
+    Properties: 
+      LaunchTemplateName: !Sub ${AWS::StackName}-launch-template
+      LaunchTemplateData:
+        ImageId: !Ref AMIId
+        InstanceType: !Ref Instancetype
+        SecurityGroupIds: !Ref InstanceSecurityGroup
+        Monitoring: 
+          Enabled: true
+
+  AttachInstanceToASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Condition: AttachInstance
+    Properties:
+      AutoScalingGroupName: !Sub ${AWS::StackName}-Autoscaling-group
+      MinSize: '1'
+      MaxSize: '10'
+      DesiredCapacity: '1'
+      DefaultInstanceWarmup: 30
+      TargetGroupARNs:
+        - !Ref TargetGroup
+      InstanceId: !Ref InstanceId
+
+  ASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Condition: CreateNewInstance
+    Properties:
+      AutoScalingGroupName: !Sub ${AWS::StackName}-Autoscaling-group
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      MaxSize: '10'
+      MinSize: '1'
+      DesiredCapacity: '1'
+      DefaultInstanceWarmup: 30
+      VPCZoneIdentifier: !Ref Subnets
+      TargetGroupARNs:
+        - !Ref TargetGroup
+        
+  CPUPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Condition: UseCPUPolicy
+    DependsOn: ALBRequestCountPolicy
+    Properties:
+      AutoScalingGroupName: !Sub ${AWS::StackName}-Autoscaling-group
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: !Ref CPUPolicyTargetValue
+
+  ALBRequestCountPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Condition: UseALBPolicy
+    DependsOn: LoadBalancerListener
+    Properties:
+      AutoScalingGroupName: !Sub ${AWS::StackName}-Autoscaling-group
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ALBRequestCountPerTarget
+          ResourceLabel: !Join 
+            - '/' 
+            - - !GetAtt LoadBalancer.LoadBalancerFullName
+              - !GetAtt TargetGroup.TargetGroupFullName
+        TargetValue: !Ref ALBRequestCountTargetValue
+
+Conditions:
+  CreateNewInstance: !Equals [!Ref InstanceId, ""]
+  AttachInstance: !Not [!Equals [!Ref InstanceId, ""]]
+  UseCPUPolicy: !Or
+    - !Equals [!Ref ScalingPolicyType, "CPU"]
+    - !Equals [!Ref ScalingPolicyType, "Both"]
+  UseALBPolicy: !Or
+    - !Equals [!Ref ScalingPolicyType, "ALB"]
+    - !Equals [!Ref ScalingPolicyType, "Both"]
