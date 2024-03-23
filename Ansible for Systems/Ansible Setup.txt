@@ -42,3 +42,6 @@ ansible -i inventory all -m "copy" -a "src: "" dst: "" "
 [dbservers] #[] is grouping
 
 ansible -i inventory dbservers -m "shell" -a "touch task1"
+
+#Run Ansible Playbooks
+ansible-playbook -i inventory install.yml
