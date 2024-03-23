@@ -45,3 +45,7 @@ ansible -i inventory dbservers -m "shell" -a "touch task1"
 
 #Run Ansible Playbooks
 ansible-playbook -i inventory install.yml
+
+#Run the Ansible Playbooks with Inventory file with Limited subnet/hosts
+ansible-playbook -i inventory.ini playbook.yaml --limit subnet_1
+
