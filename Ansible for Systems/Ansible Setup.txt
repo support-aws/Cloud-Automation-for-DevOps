@@ -1,0 +1,44 @@
+sudo apt update
+sudo apt install ansible
+
+ansible --version
+
+Ansible server | Target server
+
+Setup password-less authentication for target server
+Ansible by default uses python 
+
+
+On the Ansible Server
+ssh-keygen 
+cat /home/ubuntu/ .ssh/id_rsa.pub
+
+on the target server:
+
+ssh-keygen
+ls ~/.ssh/
+vim ~/.ssh/authorized_keys
+#paste the id_rsa.pub from Ansible Server
+
+On Ansible Server
+ssh (target_server)
+
+Ansible Adhoc Commands:
+inventory file #to keep the ip's of target servers
+by default it saves in /etc/ansible/hosts
+
+ansible -i inventory (target_server)
+or
+ansible -i inventory all
+
+ansible -i inventory all -m "shell" -a "touch task1"
+# -m = module  -a = argument
+
+Look for Ansible Modules in ansible website
+ansible -i inventory all -m "shell" -a "nproc"
+ansible -i inventory all -m "shell" -a "du"
+ansible -i inventory all -m "copy" -a "src: "" dst: "" "
+
+[dbservers] #[] is grouping
+
+ansible -i inventory dbservers -m "shell" -a "touch task1"
